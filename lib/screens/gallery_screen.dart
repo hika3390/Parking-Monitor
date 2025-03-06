@@ -96,8 +96,29 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   Future<void> _saveToGallery(File file) async {
+    final isVideo = file.path.endsWith('.mp4');
+    final shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('確認'),
+        content: Text('この${isVideo ? '動画' : '写真'}をカメラロールに保存しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldSave != true) return;
+
     try {
-      final result = await ImageGallerySaver.saveFile(file.path);
+      await ImageGallerySaver.saveFile(file.path);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('カメラロールに保存しました')),
