@@ -29,6 +29,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   // クラス変数として追加
   bool _isVideoMode = false;
   bool _isRecording = false;
+  DateTime? _recordingStartTime;
+  Timer? _recordingTimer;
+  String _recordingDuration = '00:00';
 
   @override
   void initState() {
@@ -143,7 +146,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         final XFile videoFile = await _controller!.stopVideoRecording();
         setState(() {
           _isRecording = false;
+          _recordingStartTime = null;
         });
+        _recordingTimer?.cancel();
         
         if (!mounted) return;
         
@@ -158,6 +163,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         await _controller!.startVideoRecording();
         setState(() {
           _isRecording = true;
+          _recordingStartTime = DateTime.now();
+          _recordingDuration = '00:00';
+        });
+        
+        // 録画時間を更新するタイマーを開始
+        _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (_recordingStartTime != null) {
+            final duration = DateTime.now().difference(_recordingStartTime!);
+            setState(() {
+              _recordingDuration = '${duration.inMinutes.toString().padLeft(2, '0')}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}';
+            });
+          }
         });
       }
     } catch (e) {
@@ -284,6 +301,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   @override
   void dispose() {
     _detectionTimer?.cancel();
+    _recordingTimer?.cancel();
     _detectionService?.dispose();
     _controller?.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -358,6 +376,42 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ),
               
+              // 録画時間を画面上部に表示
+              if (_isVideoMode && _isRecording)
+                Positioned(
+                  top: 20,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.fiber_manual_record,
+                            color: Colors.red,
+                            size: 12,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _recordingDuration,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
               // 撮影ボタンを画面下部中央に配置
               Positioned(
                 bottom: 30,
