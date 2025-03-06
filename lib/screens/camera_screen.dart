@@ -25,6 +25,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String? _errorMessage;
   DateTime? _lastNotificationTime;
 
+  // クラス変数として追加
+  bool _isVideoMode = false;
+  bool _isRecording = false;
+
   @override
   void initState() {
     super.initState();
@@ -90,6 +94,70 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       setState(() {
         _errorMessage = 'カメラの初期化に失敗しました: $e';
       });
+    }
+  }
+
+  Future<void> _takePicture() async {
+    if (_controller == null || !_controller!.value.isInitialized) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('カメラが準備できていません')),
+      );
+      return;
+    }
+
+    try {
+      final XFile image = await _controller!.takePicture();
+      
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('写真を保存しました: ${image.path}')),
+      );
+      
+      // 必要に応じて保存した画像を表示するなどの処理
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('写真の撮影に失敗しました: $e')),
+      );
+    }
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_controller == null || !_controller!.value.isInitialized) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('カメラが準備できていません')),
+      );
+      return;
+    }
+
+    try {
+      if (_isRecording) {
+        // 録画停止
+        final XFile videoFile = await _controller!.stopVideoRecording();
+        setState(() {
+          _isRecording = false;
+        });
+        
+        if (!mounted) return;
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('動画を保存しました: ${videoFile.path}')),
+        );
+        
+        // 必要に応じて保存した動画を再生するなどの処理
+      } else {
+        // 録画開始
+        await _controller!.startVideoRecording();
+        setState(() {
+          _isRecording = true;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('動画の${_isRecording ? '停止' : '開始'}に失敗しました: $e')),
+      );
     }
   }
 
@@ -232,19 +300,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     return Scaffold(
       appBar: AppBar(
         title: const Text('駐車監視カメラ'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.pushNamed(context, '/settings'),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(
-            color: Colors.grey[300],
-            height: 1.0,
-          ),
-        ),
       ),
       body: _controller?.value.isInitialized == true
         ? Stack(
@@ -253,6 +308,49 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               Positioned.fill(
                 child: CameraPreview(_controller!),
               ),
+              // 写真/動画切り替えトグルを画面左下に配置
+              Positioned(
+                bottom: 30,
+                left: 30,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          Icons.camera_alt,
+                          color: _isVideoMode ? Colors.white54 : Colors.white,
+                        ),
+                        onPressed: () {
+                          if (_isVideoMode) {
+                            setState(() {
+                              _isVideoMode = false;
+                            });
+                          }
+                        },
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.videocam,
+                          color: _isVideoMode ? Colors.white : Colors.white54,
+                        ),
+                        onPressed: () {
+                          if (!_isVideoMode) {
+                            setState(() {
+                              _isVideoMode = true;
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
               // 撮影ボタンを画面下部中央に配置
               Positioned(
                 bottom: 30,
@@ -261,11 +359,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 child: Center(
                   child: FloatingActionButton(
                     onPressed: () {
+                      if (_isVideoMode) {
+                        _toggleRecording();
+                      } else {
+                        _takePicture();
+                      }
                     },
                     backgroundColor: Colors.white,
-                    child: const Icon(
-                      Icons.camera_alt,
-                      color: Colors.black,
+                    child: Icon(
+                      _isVideoMode 
+                        ? (_isRecording ? Icons.stop : Icons.fiber_manual_record)
+                        : Icons.camera_alt,
+                      color: _isVideoMode && _isRecording ? Colors.red : Colors.black,
                       size: 30,
                     ),
                   ),

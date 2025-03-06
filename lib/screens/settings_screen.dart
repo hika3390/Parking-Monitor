@@ -45,7 +45,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('設定を保存しました')),
       );
-      Navigator.pop(context);
     }
   }
 
