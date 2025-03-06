@@ -59,25 +59,29 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
     if (!_hasCameraPermission) return;
 
-    // 利用可能なカメラの取得
-    try {
-      final cameras = await availableCameras();
-      setState(() {
-        _isCameraAvailable = cameras.isNotEmpty;
-        if (!_isCameraAvailable) {
-          _errorMessage = '利用可能なカメラがありません';
+      // 利用可能なカメラの取得
+      try {
+        final cameras = await availableCameras();
+        setState(() {
+          _isCameraAvailable = cameras.isNotEmpty;
+          if (!_isCameraAvailable) {
+            _errorMessage = '利用可能なカメラがありません';
+          }
+        });
+
+        if (!_isCameraAvailable) return;
+
+        // 設定で選択されたカメラを使用
+        var selectedIndex = AppConfig.getSelectedCamera();
+        if (selectedIndex >= cameras.length) {
+          selectedIndex = 0;
         }
-      });
-
-      if (!_isCameraAvailable) return;
-
-      // カメラコントローラーの初期化
-      final camera = cameras.first;
+        final camera = cameras[selectedIndex];
       final controller = CameraController(
         camera,
         ResolutionPreset.ultraHigh,
         enableAudio: true,
-        fps: 60,
+        fps: AppConfig.getCameraFps(),
         imageFormatGroup: ImageFormatGroup.jpeg
       );
 
