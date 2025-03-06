@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import 'media_viewer_screen.dart';
 
 class GalleryScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class GalleryScreen extends StatefulWidget {
 class _GalleryScreenState extends State<GalleryScreen> {
   List<File> _mediaFiles = [];
   bool _isLoading = true;
+  final Map<String, File> _videoThumbnails = {};
 
   @override
   void initState() {
@@ -42,6 +44,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
       // 新しい順に並び替え
       _mediaFiles.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+
+      // ビデオファイルのサムネイルを生成
+      for (final file in _mediaFiles) {
+        if (file.path.endsWith('.mp4')) {
+          await _generateVideoThumbnail(file);
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -54,6 +63,22 @@ class _GalleryScreenState extends State<GalleryScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _generateVideoThumbnail(File videoFile) async {
+    try {
+      final thumbnailPath = await VideoThumbnail.thumbnailFile(
+        video: videoFile.path,
+        imageFormat: ImageFormat.JPEG,
+        quality: 75,
+      );
+      
+      if (thumbnailPath != null) {
+        _videoThumbnails[videoFile.path] = File(thumbnailPath);
+      }
+    } catch (e) {
+      debugPrint('サムネイル生成エラー: $e');
     }
   }
 
@@ -108,15 +133,24 @@ class _GalleryScreenState extends State<GalleryScreen> {
           children: [
             // サムネイル画像
             isVideo
-                ? Container(
-                    color: Colors.black,
-                    child: const Center(
-                      child: Icon(
-                        Icons.play_circle_outline,
-                        size: 48,
-                        color: Colors.white,
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _videoThumbnails.containsKey(file.path)
+                          ? FadeInImage(
+                              placeholder: MemoryImage(kTransparentImage),
+                              image: FileImage(_videoThumbnails[file.path]!),
+                              fit: BoxFit.cover,
+                            )
+                          : Container(color: Colors.black),
+                      const Center(
+                        child: Icon(
+                          Icons.play_circle_outline,
+                          size: 48,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
+                    ],
                   )
                 : FadeInImage(
                     placeholder: MemoryImage(kTransparentImage),
