@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/detection_service.dart';
 import '../services/mail_service.dart';
 import '../utils/config.dart';
+import '../utils/media_storage.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -72,7 +73,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final controller = CameraController(
         camera,
         ResolutionPreset.ultraHigh,
-        enableAudio: true
+        enableAudio: true,
+        fps: 60,
+        imageFormatGroup: ImageFormatGroup.jpeg
       );
 
       await controller.initialize();
@@ -110,11 +113,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('写真を保存しました: ${image.path}')),
-      );
+      // 画像を保存
+      final savedImage = await MediaStorage.saveMedia(File(image.path));
       
-      // 必要に応じて保存した画像を表示するなどの処理
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('写真を保存しました')),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -142,10 +148,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         if (!mounted) return;
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('動画を保存しました: ${videoFile.path}')),
+          const SnackBar(content: Text('動画を保存しました')),
         );
-        
-        // 必要に応じて保存した動画を再生するなどの処理
+
+        // 動画を保存
+        await MediaStorage.saveMedia(File(videoFile.path), isVideo: true);
       } else {
         // 録画開始
         await _controller!.startVideoRecording();
