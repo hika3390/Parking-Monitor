@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'camera_screen.dart';
 import 'gallery_screen.dart';
 import 'settings_screen.dart';
+import 'home_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -15,7 +15,7 @@ class _MainScreenState extends State<MainScreen> {
 
   // 画面のリスト
   final List<Widget> _screens = [
-    const CameraScreen(),
+    const HomeScreen(),
     const GalleryScreen(),
     const SettingsScreen(),
   ];
@@ -33,8 +33,8 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
-            icon: Icon(Icons.camera_alt),
-            label: 'カメラ',
+            icon: Icon(Icons.home),
+            label: 'ホーム',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.photo_library),
