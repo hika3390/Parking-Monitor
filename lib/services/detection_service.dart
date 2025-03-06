@@ -1,86 +1,50 @@
-import 'dart:io';
+import 'dart:io' show Platform;
 import 'package:camera/camera.dart';
-import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
-import 'package:flutter/material.dart' show Size;
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 
 class DetectionService {
-  static const confidenceThreshold = 0.5;
-  static const targetLabels = ['person', 'uniform', 'clothing'];
-  
-  late final ObjectDetector _detector;
-  bool _isInitialized = false;
-
-  Future<String> _getModelPath() async {
-    final modelName = 'efficientdet_lite0.tflite';
-    final manifestContent = await File('pubspec.yaml').readAsString();
-    if (!manifestContent.contains('assets/ml/')) {
-      throw Exception('ML modelがassetsに設定されていません');
-    }
-
-    final appDir = await getApplicationDocumentsDirectory();
-    final modelPath = path.join(appDir.path, modelName);
-    
-    // モデルファイルが存在しない場合、アセットからコピー
-    final modelFile = File(modelPath);
-    if (!await modelFile.exists()) {
-      final modelBytes = await File('assets/ml/$modelName').readAsBytes();
-      await modelFile.writeAsBytes(modelBytes);
-    }
-    
-    return modelPath;
-  }
+  // 緑色の閾値
+  static const int greenThreshold = 150;  // G値の最小値
+  static const int nonGreenThreshold = 100;  // R,B値の最大値
+  static const double requiredGreenRatio = 0.05;  // 必要な緑色ピクセルの割合（5%）
 
   Future<void> initialize() async {
-    if (_isInitialized) return;
-
-    final modelPath = await _getModelPath();
-    final options = LocalObjectDetectorOptions(
-      mode: DetectionMode.stream,
-      classifyObjects: true,
-      multipleObjects: true,
-      confidenceThreshold: confidenceThreshold,
-      modelPath: modelPath,
-    );
-
-    _detector = ObjectDetector(options: options);
-    _isInitialized = true;
+    // 初期化不要
   }
 
   Future<bool> detectParkingOfficer(CameraImage image) async {
-    if (!_isInitialized) {
-      throw Exception('DetectionService has not been initialized');
-    }
-
-    final inputImage = InputImage.fromBytes(
-      bytes: image.planes[0].bytes,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: InputImageRotation.rotation0deg,
-        format: InputImageFormat.bgra8888,
-        bytesPerRow: image.planes[0].bytesPerRow,
-      ),
-    );
-
-    final objects = await _detector.processImage(inputImage);
+    final plane = image.planes[0];
+    final bytes = plane.bytes;
+    final bytesPerRow = plane.bytesPerRow;
+    final pixelStride = plane.bytesPerPixel ?? 1;
     
-    // 人物が検出され、その人物が制服または特定の衣類を着ている場合を検出
-    for (final object in objects) {
-      if (object.labels.any((label) => 
-          targetLabels.contains(label.text.toLowerCase()) &&
-          label.confidence >= confidenceThreshold)) {
-        return true;
+    final height = image.height;
+    final width = image.width;
+
+    int greenPixels = 0;
+    final totalPixels = width * height;
+    
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final pixelIndex = y * bytesPerRow + x * pixelStride;
+        
+        if (pixelIndex + 2 >= bytes.length) continue;
+        
+        // バイトデータから輝度を取得
+        final int value = bytes[pixelIndex] & 0xFF;
+        
+        // 輝度が緑色の範囲内にあるかを判定
+        if (value > greenThreshold && value < 200) {
+          greenPixels++;
+        }
       }
     }
 
-    return false;
+    // 緑色ピクセルの割合を計算
+    final double greenRatio = greenPixels / totalPixels;
+    return greenRatio >= requiredGreenRatio;
   }
 
   Future<void> dispose() async {
-    if (_isInitialized) {
-      _detector.close();
-      _isInitialized = false;
-    }
+    // リソース解放不要
   }
 }

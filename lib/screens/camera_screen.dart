@@ -67,9 +67,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       final camera = cameras.first;
       final controller = CameraController(
         camera,
-        ResolutionPreset.medium,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.bgra8888,
+        ResolutionPreset.ultraHigh,
+        enableAudio: true
       );
 
       await controller.initialize();
@@ -107,23 +106,24 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
     _isDetecting = true;
     try {
-      final image = await _controller!.takePicture();
+      // 1フレーム取得
+      final completer = Completer<CameraImage>();
       
-      // 画像ストリームの取得
-      late CameraImage cameraImage;
-      await _controller!.startImageStream((image) {
-        cameraImage = image;
-        _controller!.stopImageStream();
+      _controller!.startImageStream((image) {
+        if (!completer.isCompleted) {
+          completer.complete(image);
+          _controller!.stopImageStream();
+        }
       });
 
-      // 画像ストリームが取得できるまで待機
-      while (!_controller!.value.isStreamingImages) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-
+      final cameraImage = await completer.future;
+      
+      // 緑色検出の実行
       final detected = await _detectionService!.detectParkingOfficer(cameraImage);
 
       if (detected) {
+        // 写真を撮影
+        final image = await _controller!.takePicture();
         await _sendNotification(image.path);
       }
     } catch (e) {
@@ -139,7 +139,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _sendNotification(String imagePath) async {
     final email = AppConfig.getEmail();
-    if (email == null) return;
+    if (email == null || email.isEmpty) return;
 
     // 通知の制限（最後の通知から30秒以上経過している場合のみ送信）
     final now = DateTime.now();
@@ -247,29 +247,33 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         ),
       ),
       body: _controller?.value.isInitialized == true
-          ? Column(
-              children: [
-                Expanded(
-                  child: CameraPreview(_controller!),
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                        color: Colors.grey[300]!,
-                        width: 1.0,
-                      ),
+        ? Stack(
+            children: [
+              // カメラプレビューを画面いっぱいに表示
+              Positioned.fill(
+                child: CameraPreview(_controller!),
+              ),
+              // 撮影ボタンを画面下部中央に配置
+              Positioned(
+                bottom: 30,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: FloatingActionButton(
+                    onPressed: () {
+                    },
+                    backgroundColor: Colors.white,
+                    child: const Icon(
+                      Icons.camera_alt,
+                      color: Colors.black,
+                      size: 30,
                     ),
                   ),
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    '検出間隔: ${AppConfig.getDetectionInterval()}秒',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
                 ),
-              ],
-            )
-          : _buildFallbackUI(),
+              ),
+            ],
+          )
+        : _buildFallbackUI(),
     );
   }
 }
