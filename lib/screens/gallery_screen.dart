@@ -13,10 +13,27 @@ class GalleryScreen extends StatefulWidget {
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
 
+enum ViewMode {
+  grid,
+  list,
+}
+
 class _GalleryScreenState extends State<GalleryScreen> {
   List<File> _mediaFiles = [];
   bool _isLoading = true;
   final Map<String, File> _videoThumbnails = {};
+  ViewMode _viewMode = ViewMode.list;
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  String _getFileName(String path) {
+    return path.split('/').last;
+  }
 
   @override
   void initState() {
@@ -36,11 +53,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
         await mediaDir.create(recursive: true);
       }
 
-      final files = await mediaDir.list().toList();
-      _mediaFiles = files
-          .where((file) => file.path.endsWith('.jpg') || file.path.endsWith('.mp4'))
-          .map((file) => File(file.path))
-          .toList();
+      // サムネイル画像を除外してファイルをフィルタリング
+      final files = await mediaDir.list().where((entity) {
+        final path = entity.path.toLowerCase();
+        return (path.endsWith('.jpg') || path.endsWith('.mp4')) && 
+               !path.contains('thumb_') && 
+               !path.contains('thumbnail_');
+      }).toList();
+      
+      _mediaFiles = files.map((file) => File(file.path)).toList();
 
       // 新しい順に並び替え
       _mediaFiles.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
@@ -68,8 +89,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   Future<void> _generateVideoThumbnail(File videoFile) async {
     try {
+      final tempDir = await getTemporaryDirectory();
       final thumbnailPath = await VideoThumbnail.thumbnailFile(
         video: videoFile.path,
+        thumbnailPath: '${tempDir.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg',
         imageFormat: ImageFormat.JPEG,
         quality: 75,
       );
@@ -135,9 +158,121 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   Widget _buildMediaTile(File file) {
     final isVideo = file.path.endsWith('.mp4');
+    return Container(
+      margin: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MediaViewerScreen(
+                  file: file,
+                  isVideo: isVideo,
+                ),
+              ),
+            );
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // サムネイル画像
+              isVideo
+                  ? Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _videoThumbnails.containsKey(file.path)
+                            ? FadeInImage(
+                                placeholder: MemoryImage(kTransparentImage),
+                                image: FileImage(_videoThumbnails[file.path]!),
+                                fit: BoxFit.cover,
+                              )
+                            : Container(color: Colors.black),
+                        const Center(
+                          child: Icon(
+                            Icons.play_circle_outline,
+                            size: 48,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    )
+                  : FadeInImage(
+                      placeholder: MemoryImage(kTransparentImage),
+                      image: FileImage(file),
+                      fit: BoxFit.cover,
+                    ),
+              // アクションボタン
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.save_alt,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                        onPressed: () => _saveToGallery(file),
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.delete,
+                          color: Colors.red,
+                          size: 22,
+                        ),
+                        onPressed: () => _showDeleteDialog(file),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // タイムスタンプ
+              Positioned(
+                bottom: 8,
+                left: 8,
+                child: Text(
+                  _formatDateTime(file.lastModifiedSync()),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  strutStyle: const StrutStyle(
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListTile(File file) {
+    final isVideo = file.path.endsWith('.mp4');
     return Card(
-      margin: const EdgeInsets.all(4),
-      child: InkWell(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: ListTile(
         onTap: () {
           Navigator.push(
             context,
@@ -149,69 +284,100 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
           );
         },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // サムネイル画像
-            isVideo
-                ? Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _videoThumbnails.containsKey(file.path)
-                          ? FadeInImage(
-                              placeholder: MemoryImage(kTransparentImage),
-                              image: FileImage(_videoThumbnails[file.path]!),
-                              fit: BoxFit.cover,
-                            )
-                          : Container(color: Colors.black),
-                      const Center(
-                        child: Icon(
-                          Icons.play_circle_outline,
-                          size: 48,
-                          color: Colors.white,
-                        ),
+        leading: SizedBox(
+          width: 56,
+          height: 56,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                isVideo
+                    ? _videoThumbnails.containsKey(file.path)
+                        ? Image.file(
+                            _videoThumbnails[file.path]!,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(color: Colors.black)
+                    : Image.file(
+                        file,
+                        fit: BoxFit.cover,
                       ),
-                    ],
-                  )
-                : FadeInImage(
-                    placeholder: MemoryImage(kTransparentImage),
-                    image: FileImage(file),
-                    fit: BoxFit.cover,
+                if (isVideo)
+                  Positioned(
+                    right: 2,
+                    bottom: 2,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Icon(
+                        Icons.videocam,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
                   ),
-            // アクションボタン
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.save_alt, color: Colors.white),
-                    onPressed: () => _saveToGallery(file),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _showDeleteDialog(file),
-                  ),
-                ],
-              ),
+              ],
             ),
-            // タイムスタンプ
-            Positioned(
-              bottom: 8,
-              left: 8,
-              child: Text(
-                '${file.lastModifiedSync().toString().split('.')[0]}',
+          ),
+        ),
+        title: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: _getFileName(file.path),
                 style: const TextStyle(
-                  color: Colors.white,
-                  backgroundColor: Colors.black54,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
+              const TextSpan(text: '\n'),
+              TextSpan(
+                text: _formatFileSize(file.lengthSync()),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+        subtitle: Text(_formatDateTime(file.lastModifiedSync())),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.save_alt),
+              onPressed: () => _saveToGallery(file),
+            ),
+            IconButton(
+              icon: const Icon(
+                Icons.delete,
+                color: Colors.red,
+              ),
+              onPressed: () => _showDeleteDialog(file),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    if (difference.inDays == 0) {
+      // 今日の場合は時刻のみ
+      return '今日 ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays == 1) {
+      return '昨日 ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } else {
+      // それ以外は月日と時刻
+      return '${dateTime.month}/${dateTime.day} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    }
   }
 
   Future<void> _showDeleteDialog(File file) async {
@@ -246,6 +412,54 @@ class _GalleryScreenState extends State<GalleryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('ギャラリー'),
+        actions: [
+          PopupMenuButton<ViewMode>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (ViewMode mode) {
+              setState(() {
+                _viewMode = mode;
+              });
+            },
+            itemBuilder: (BuildContext context) => [
+              PopupMenuItem(
+                value: ViewMode.grid,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.grid_view,
+                      color: _viewMode == ViewMode.grid ? Colors.blue : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'サムネイル表示',
+                      style: TextStyle(
+                        color: _viewMode == ViewMode.grid ? Colors.blue : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: ViewMode.list,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.list,
+                      color: _viewMode == ViewMode.list ? Colors.blue : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'リスト表示',
+                      style: TextStyle(
+                        color: _viewMode == ViewMode.list ? Colors.blue : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -255,19 +469,27 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 )
               : RefreshIndicator(
                   onRefresh: _loadMediaFiles,
-                  child: GridView.builder(
-                    padding: const EdgeInsets.all(4),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 1.0,
-                      mainAxisSpacing: 4,
-                      crossAxisSpacing: 4,
-                    ),
-                    itemCount: _mediaFiles.length,
-                    itemBuilder: (context, index) {
-                      return _buildMediaTile(_mediaFiles[index]);
-                    },
-                  ),
+                  child: _viewMode == ViewMode.grid
+                      ? GridView.builder(
+                          padding: const EdgeInsets.all(8),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 1.0,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                          ),
+                          itemCount: _mediaFiles.length,
+                          itemBuilder: (context, index) {
+                            return _buildMediaTile(_mediaFiles[index]);
+                          },
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(8),
+                          itemCount: _mediaFiles.length,
+                          itemBuilder: (context, index) {
+                            return _buildListTile(_mediaFiles[index]);
+                          },
+                        ),
                 ),
     );
   }
