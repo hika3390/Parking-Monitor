@@ -1,9 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:transparent_image/transparent_image.dart';
-import 'package:image_gallery_saver/image_gallery_saver.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
+import '../services/gallery_service.dart';
 import 'media_viewer_screen.dart';
 
 class GalleryScreen extends StatefulWidget {
@@ -13,27 +10,10 @@ class GalleryScreen extends StatefulWidget {
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
 
-enum ViewMode {
-  grid,
-  list,
-}
-
 class _GalleryScreenState extends State<GalleryScreen> {
-  List<File> _mediaFiles = [];
+  final GalleryService _galleryService = GalleryService();
   bool _isLoading = true;
-  final Map<String, File> _videoThumbnails = {};
   ViewMode _viewMode = ViewMode.list;
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
-
-  String _getFileName(String path) {
-    return path.split('/').last;
-  }
 
   @override
   void initState() {
@@ -47,31 +27,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     });
 
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final mediaDir = Directory('${appDir.path}/media');
-      if (!await mediaDir.exists()) {
-        await mediaDir.create(recursive: true);
-      }
-
-      // サムネイル画像を除外してファイルをフィルタリング
-      final files = await mediaDir.list().where((entity) {
-        final path = entity.path.toLowerCase();
-        return (path.endsWith('.jpg') || path.endsWith('.mp4')) && 
-               !path.contains('thumb_') && 
-               !path.contains('thumbnail_');
-      }).toList();
-      
-      _mediaFiles = files.map((file) => File(file.path)).toList();
-
-      // 新しい順に並び替え
-      _mediaFiles.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
-
-      // ビデオファイルのサムネイルを生成
-      for (final file in _mediaFiles) {
-        if (file.path.endsWith('.mp4')) {
-          await _generateVideoThumbnail(file);
-        }
-      }
+      await _galleryService.loadMediaFiles();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -87,28 +43,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
-  Future<void> _generateVideoThumbnail(File videoFile) async {
+  Future<void> _deleteFile(MediaFile file) async {
     try {
-      final tempDir = await getTemporaryDirectory();
-      final thumbnailPath = await VideoThumbnail.thumbnailFile(
-        video: videoFile.path,
-        thumbnailPath: '${tempDir.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        imageFormat: ImageFormat.JPEG,
-        quality: 75,
-      );
-      
-      if (thumbnailPath != null) {
-        _videoThumbnails[videoFile.path] = File(thumbnailPath);
-      }
-    } catch (e) {
-      debugPrint('サムネイル生成エラー: $e');
-    }
-  }
-
-  Future<void> _deleteFile(File file) async {
-    try {
-      await file.delete();
-      await _loadMediaFiles();
+      await _galleryService.deleteFile(file);
+      setState(() {}); // 画面を更新
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -118,13 +56,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
-  Future<void> _saveToGallery(File file) async {
-    final isVideo = file.path.endsWith('.mp4');
+  Future<void> _saveToGallery(MediaFile file) async {
     final shouldSave = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('確認'),
-        content: Text('この${isVideo ? '動画' : '写真'}をカメラロールに保存しますか？'),
+        content: Text('この${file.isVideo ? '動画' : '写真'}をカメラロールに保存しますか？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -141,7 +78,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     if (shouldSave != true) return;
 
     try {
-      await ImageGallerySaver.saveFile(file.path);
+      await _galleryService.saveToGallery(file);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('カメラロールに保存しました')),
@@ -156,8 +93,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
-  Widget _buildMediaTile(File file) {
-    final isVideo = file.path.endsWith('.mp4');
+  Widget _buildMediaTile(MediaFile file) {
     return Container(
       margin: const EdgeInsets.all(6),
       decoration: BoxDecoration(
@@ -178,8 +114,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
               context,
               MaterialPageRoute(
                 builder: (context) => MediaViewerScreen(
-                  file: file,
-                  isVideo: isVideo,
+                  file: file.file,
+                  isVideo: file.isVideo,
                 ),
               ),
             );
@@ -188,14 +124,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
             fit: StackFit.expand,
             children: [
               // サムネイル画像
-              isVideo
+              file.isVideo
                   ? Stack(
                       fit: StackFit.expand,
                       children: [
-                        _videoThumbnails.containsKey(file.path)
+                        _galleryService.videoThumbnails.containsKey(file.file.path)
                             ? FadeInImage(
                                 placeholder: MemoryImage(kTransparentImage),
-                                image: FileImage(_videoThumbnails[file.path]!),
+                                image: FileImage(_galleryService.videoThumbnails[file.file.path]!),
                                 fit: BoxFit.cover,
                               )
                             : Container(color: Colors.black),
@@ -210,7 +146,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                     )
                   : FadeInImage(
                       placeholder: MemoryImage(kTransparentImage),
-                      image: FileImage(file),
+                      image: FileImage(file.file),
                       fit: BoxFit.cover,
                     ),
               // アクションボタン
@@ -250,7 +186,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 bottom: 8,
                 left: 8,
                 child: Text(
-                  _formatDateTime(file.lastModifiedSync()),
+                  _galleryService.formatDateTime(file.lastModified),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -268,8 +204,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
   }
 
-  Widget _buildListTile(File file) {
-    final isVideo = file.path.endsWith('.mp4');
+  Widget _buildListTile(MediaFile file) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
@@ -278,8 +213,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
             context,
             MaterialPageRoute(
               builder: (context) => MediaViewerScreen(
-                file: file,
-                isVideo: isVideo,
+                file: file.file,
+                isVideo: file.isVideo,
               ),
             ),
           );
@@ -292,18 +227,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                isVideo
-                    ? _videoThumbnails.containsKey(file.path)
+                file.isVideo
+                    ? _galleryService.videoThumbnails.containsKey(file.file.path)
                         ? Image.file(
-                            _videoThumbnails[file.path]!,
+                            _galleryService.videoThumbnails[file.file.path]!,
                             fit: BoxFit.cover,
                           )
                         : Container(color: Colors.black)
                     : Image.file(
-                        file,
+                        file.file,
                         fit: BoxFit.cover,
                       ),
-                if (isVideo)
+                if (file.isVideo)
                   Positioned(
                     right: 2,
                     bottom: 2,
@@ -328,14 +263,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
           TextSpan(
             children: [
               TextSpan(
-                text: _getFileName(file.path),
+                text: file.name,
                 style: const TextStyle(
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const TextSpan(text: '\n'),
               TextSpan(
-                text: _formatFileSize(file.lengthSync()),
+                text: _galleryService.formatFileSize(file.size),
                 style: const TextStyle(
                   fontSize: 12,
                   color: Colors.grey,
@@ -344,7 +279,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ],
           ),
         ),
-        subtitle: Text(_formatDateTime(file.lastModifiedSync())),
+        subtitle: Text(_galleryService.formatDateTime(file.lastModified)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -365,22 +300,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
   }
 
-  String _formatDateTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-    
-    if (difference.inDays == 0) {
-      // 今日の場合は時刻のみ
-      return '今日 ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
-    } else if (difference.inDays == 1) {
-      return '昨日 ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
-    } else {
-      // それ以外は月日と時刻
-      return '${dateTime.month}/${dateTime.day} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
-    }
-  }
-
-  Future<void> _showDeleteDialog(File file) async {
+  Future<void> _showDeleteDialog(MediaFile file) async {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -463,7 +383,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _mediaFiles.isEmpty
+          : _galleryService.mediaFiles.isEmpty
               ? const Center(
                   child: Text('メディアがありません'),
                 )
@@ -478,16 +398,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             mainAxisSpacing: 8,
                             crossAxisSpacing: 8,
                           ),
-                          itemCount: _mediaFiles.length,
+                          itemCount: _galleryService.mediaFiles.length,
                           itemBuilder: (context, index) {
-                            return _buildMediaTile(_mediaFiles[index]);
+                            return _buildMediaTile(_galleryService.mediaFiles[index]);
                           },
                         )
                       : ListView.builder(
                           padding: const EdgeInsets.all(8),
-                          itemCount: _mediaFiles.length,
+                          itemCount: _galleryService.mediaFiles.length,
                           itemBuilder: (context, index) {
-                            return _buildListTile(_mediaFiles[index]);
+                            return _buildListTile(_galleryService.mediaFiles[index]);
                           },
                         ),
                 ),
