@@ -58,6 +58,13 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isVideo ? '動画' : '写真'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: Colors.grey[300],
+            height: 1.0,
+          ),
+        ),
       ),
       body: SizedBox.expand(
         child: widget.isVideo

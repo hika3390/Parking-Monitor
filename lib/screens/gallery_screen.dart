@@ -205,21 +205,21 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   Widget _buildListTile(MediaFile file) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => MediaViewerScreen(
-                file: file.file,
-                isVideo: file.isVideo,
-              ),
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      tileColor: Colors.transparent,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MediaViewerScreen(
+              file: file.file,
+              isVideo: file.isVideo,
             ),
-          );
-        },
-        leading: SizedBox(
+          ),
+        );
+      },
+      leading: SizedBox(
           width: 56,
           height: 56,
           child: ClipRRect(
@@ -259,28 +259,28 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
           ),
         ),
-        title: Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: file.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                ),
+      title: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: file.name,
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
               ),
-              const TextSpan(text: '\n'),
-              TextSpan(
-                text: _galleryService.formatFileSize(file.size),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
+            ),
+            const TextSpan(text: '\n'),
+            TextSpan(
+              text: _galleryService.formatFileSize(file.size),
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        subtitle: Text(_galleryService.formatDateTime(file.lastModified)),
-        trailing: Row(
+      ),
+      subtitle: Text(_galleryService.formatDateTime(file.lastModified)),
+      trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
@@ -296,7 +296,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -332,6 +331,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('ギャラリー'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: Colors.grey[300],
+            height: 1.0,
+          ),
+        ),
         actions: [
           PopupMenuButton<ViewMode>(
             icon: const Icon(Icons.more_vert),
@@ -403,9 +409,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             return _buildMediaTile(_galleryService.mediaFiles[index]);
                           },
                         )
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(8),
+                      : ListView.separated(
+                          padding: EdgeInsets.zero,
                           itemCount: _galleryService.mediaFiles.length,
+                          separatorBuilder: (context, index) => const Divider(height: 1),
                           itemBuilder: (context, index) {
                             return _buildListTile(_galleryService.mediaFiles[index]);
                           },
